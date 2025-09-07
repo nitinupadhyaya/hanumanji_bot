@@ -46,20 +46,23 @@ def save_progress(phone, day):
     conn.close()
 
 # ------------------- Message Sending -------------------
-def send_whatsapp_message(to, text):
-    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+def send_whatsapp_message(phone_number_id, recipient_id, message_text):
+    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {META_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
-    payload = {
+    data = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": recipient_id,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": message_text}
     }
-    r = requests.post(url, headers=headers, json=payload)
-    print("📤 Sent:", r.status_code, r.text)
+
+    resp = requests.post(url, headers=headers, json=data)
+    print("📤 Sent:", resp.status_code, resp.text)
+    return resp
+
     
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
@@ -100,44 +103,26 @@ def handle_admin_message(incoming_msg):
     return "❌ Admin command not recognized."
 
 # ------------------- Flask Routes -------------------
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    if request.method == "GET":
-        # ✅ Verification challenge
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
+    data = request.get_json()
+    print("📩 Webhook received:", data)
 
-        if mode == "subscribe" and token == VERIFY_TOKEN:
-            return challenge, 200
-        else:
-            return "Verification failed", 403
+    try:
+        entry = data["entry"][0]
+        changes = entry["changes"][0]["value"]
+        phone_number_id = changes["metadata"]["phone_number_id"]
+        from_number = changes["messages"][0]["from"]
+        message_text = changes["messages"][0]["text"]["body"]
 
-    if request.method == "POST":
-        data = request.get_json()
-        print("📩 Webhook received:", data)
+        # Echo back
+        send_whatsapp_message(phone_number_id, from_number, f"You said: {message_text}")
 
-        if "entry" in data:
-            for entry in data["entry"]:
-                for change in entry.get("changes", []):
-                    value = change.get("value", {})
-                    messages = value.get("messages", [])
-                    if messages:
-                        phone = messages[0]["from"]  # user’s phone number
-                        msg_text = messages[0]["text"]["body"]
+    except Exception as e:
+        print("⚠️ Error processing webhook:", e)
 
-                        if phone == ADMIN_NUMBER:
-                            reply = handle_admin_message(msg_text)
-                        else:
-                            # Normal user → next verse
-                            if msg_text.lower().strip() == "start":
-                                reply = get_next_message(phone)
-                            else:
-                                reply = "🙏 Send 'start' to begin learning Hanuman Chalisa verses."
+    return "EVENT_RECEIVED", 200
 
-                        send_whatsapp_message(phone, reply)
-
-        return "EVENT_RECEIVED", 200
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
