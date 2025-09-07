@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 from verses import verses
 
+
 # ------------------- Config -------------------
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # must match what you set in Meta dashboard
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")  # from Meta → System User token
@@ -45,25 +46,26 @@ def save_progress(phone, day):
     conn.commit()
     conn.close()
 
-# ------------------- Message Sending -------------------
-def send_whatsapp_message(phone_number_id, recipient_id, message_text):
-    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
-    headers = {
-        "Authorization": f"Bearer {META_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
+def get_all_users():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT phone FROM users")
+    users = [row[0] for row in c.fetchall()]
+    conn.close()
+    return users
+
+# ------------------- Messaging Helpers -------------------
+def send_whatsapp_message(phone_number_id, to_number, message_text):
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    payload = {
         "messaging_product": "whatsapp",
-        "to": recipient_id,
-        "type": "text",
+        "to": to_number,
         "text": {"body": message_text}
     }
+    response = requests.post(url, headers=headers, json=payload)
+    print("📤 Sent:", response.status_code, response.text)
 
-    resp = requests.post(url, headers=headers, json=data)
-    print("📤 Sent:", resp.status_code, resp.text)
-    return resp
-
-    
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
     current_day = get_progress(phone)
@@ -82,72 +84,57 @@ def get_next_message(phone):
     else:
         return "🎉 You’ve completed all 7 days of learning! Jai Hanuman 🙏"
 
-# ------------------- Admin Handler -------------------
-def handle_admin_message(incoming_msg):
-    incoming_msg = incoming_msg.strip()
-
-    if incoming_msg.lower().startswith("broadcast "):
-        broadcast_msg = incoming_msg[len("broadcast "):].strip()
-
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT phone FROM users")
-        users = [row[0] for row in c.fetchall()]
-        conn.close()
-
-        for u in users:
-            send_whatsapp_message(u, f"[Broadcast] {broadcast_msg}")
-
-        return "✅ Broadcast sent!"
-
-    return "❌ Admin command not recognized."
-
 # ------------------- Flask Routes -------------------
-@app.route("/webhook", methods=["POST"])
+@app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-    data = request.get_json()
-    print("📩 Webhook received:", data)
+    if request.method == "GET":
+        # Verification
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == VERIFY_TOKEN:
+            return challenge, 200
+        else:
+            return "Verification failed", 403
 
-    try:
-        entry = data["entry"][0]
-        changes = entry["changes"][0]["value"]
+    if request.method == "POST":
+        data = request.get_json()
+        print("📩 Webhook received:", data)
 
-        # Meta provides the phone_number_id (the business number receiving the msg)
-        phone_number_id = changes["metadata"]["phone_number_id"]
+        try:
+            entry = data["entry"][0]
+            changes = entry["changes"][0]["value"]
+            phone_number_id = changes["metadata"]["phone_number_id"]
+            from_number = changes["messages"][0]["from"]
+            message_text = changes["messages"][0]["text"]["body"].strip()
 
-        if "messages" in changes:
-            from_number = changes["messages"][0]["from"]      # sender's wa_id
-            message_text = changes["messages"][0]["text"]["body"].strip().lower()
+            # Save new user if not already
+            if get_progress(from_number) == 0:
+                save_progress(from_number, 0)
 
-            print(f"📲 Message from {from_number}: {message_text}")
+            # ✅ Admin command
+            if from_number == ADMIN_NUMBER and message_text.lower().startswith("broadcast "):
+                broadcast_msg = message_text[len("broadcast "):].strip()
+                for u in get_all_users():
+                    send_whatsapp_message(phone_number_id, u, f"[Broadcast] {broadcast_msg}")
+                send_whatsapp_message(phone_number_id, from_number, "✅ Broadcast sent!")
+                return "EVENT_RECEIVED", 200
 
-            # -------------------
-            # Learning Flow
-            # -------------------
-            if message_text in ["start", "jai hanuman", "hello"]:
-                reply = get_next_message(from_number)
-            else:
-                reply = "🙏 Send *start* to begin your Hanuman Chalisa learning journey."
-
-            # Send reply back to user
+            # ✅ Normal user flow (next verse)
+            reply = get_next_message(from_number)
             send_whatsapp_message(phone_number_id, from_number, reply)
 
-    except Exception as e:
-        print("⚠️ Error processing webhook:", e)
+        except Exception as e:
+            print("⚠️ Error processing webhook:", e)
 
-    return "EVENT_RECEIVED", 200
-
+        return "EVENT_RECEIVED", 200
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT phone, day FROM users")
-    users = c.fetchall()
-    conn.close()
-
-    for phone, day in users:
-        next_day = day + 1
+    users = get_all_users()
+    for phone in users:
+        current_day = get_progress(phone)
+        next_day = current_day + 1
         if f"day{next_day}" in verses:
             verse = verses[f"day{next_day}"]
             save_progress(phone, next_day)
@@ -161,7 +148,13 @@ def send_daily_verse():
         else:
             msg = "🎉 You’ve completed all 7 days of learning! Jai Hanuman 🙏"
 
-        send_whatsapp_message(phone, msg)
+        # Send via Meta API (using your phone_number_id — pick first user’s metadata later)
+        # For now, use a fixed phone_number_id (you can store it as ENV)
+        PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+        if PHONE_NUMBER_ID:
+            send_whatsapp_message(PHONE_NUMBER_ID, phone, msg)
+        else:
+            print("⚠️ PHONE_NUMBER_ID not set, skipping daily verse send.")
 
 # ------------------- Main -------------------
 if __name__ == "__main__":
@@ -172,4 +165,5 @@ if __name__ == "__main__":
     scheduler.add_job(send_daily_verse, "cron", hour=7, minute=0)
     scheduler.start()
 
+    # Run Flask app (Railway exposes automatically)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
