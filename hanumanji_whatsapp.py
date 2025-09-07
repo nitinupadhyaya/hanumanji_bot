@@ -14,6 +14,7 @@ WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Bu
 ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
 
 META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
+ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN") 
 PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_ID")
 
 
