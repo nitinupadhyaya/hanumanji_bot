@@ -12,6 +12,10 @@ WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")  # from Meta → System User t
 WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Business
 ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
 
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+
+
 GRAPH_API_URL = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/messages"
 
 app = Flask(__name__)
@@ -42,20 +46,21 @@ def save_progress(phone, day):
     conn.close()
 
 # ------------------- Message Sending -------------------
-def send_whatsapp_message(phone, message):
+def send_whatsapp_message(to, text):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {META_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
     payload = {
         "messaging_product": "whatsapp",
-        "to": phone,
+        "to": to,
         "type": "text",
-        "text": {"body": message}
+        "text": {"body": text}
     }
-    resp = requests.post(GRAPH_API_URL, headers=headers, json=payload)
-    print("📤 Sent:", resp.status_code, resp.text)
-
+    r = requests.post(url, headers=headers, json=payload)
+    print("📤 Sent:", r.status_code, r.text)
+    
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
     current_day = get_progress(phone)
