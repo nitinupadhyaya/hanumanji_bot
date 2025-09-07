@@ -7,7 +7,7 @@ import pytz
 from verses import verses
 
 # ------------------- Config -------------------
-VERIFY_TOKEN = "manthantoken"  # must match what you set in Meta dashboard
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # must match what you set in Meta dashboard
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")  # from Meta → System User token
 WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Business
 ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
