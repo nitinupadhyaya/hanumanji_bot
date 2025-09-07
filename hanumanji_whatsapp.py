@@ -84,24 +84,23 @@ def handle_admin_message(incoming_msg):
     return "❌ Admin command not recognized."
 
 # ------------------- Flask Routes -------------------
-@app.route("/whatsapp", methods=["POST"])
-def whatsapp_reply():
-    incoming_msg = request.form.get("Body", "").strip()
-    user = request.form.get("From")
+@app.route("/webhook", methods=["GET", "POST"])
+def webhook():
+    if request.method == "GET":
+        # Meta verification
+        verify_token = "manthantoken"  # must match what you enter in Meta Dashboard
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if token == verify_token:
+            return challenge, 200
+        return "Verification failed", 403
 
-    if user == ADMIN_NUMBER:
-        reply = handle_admin_message(incoming_msg)
-    elif incoming_msg.lower() in ["start", "next"]:
-        reply = get_next_message(user)
-    else:
-        reply = "🙏 Send *start* to begin or *next* for the next verse."
+    elif request.method == "POST":
+        data = request.get_json()
+        print("📩 Incoming:", data)
+        # here you’ll parse the WhatsApp messages
+        return "OK", 200
 
-    client.messages.create(
-        from_=twilio_whatsapp,
-        to=user,
-        body=reply
-    )
-    return "OK", 200
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
