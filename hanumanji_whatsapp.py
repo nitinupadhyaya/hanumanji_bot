@@ -87,19 +87,23 @@ def handle_admin_message(incoming_msg):
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
     if request.method == "GET":
-        # Meta verification
-        verify_token = "manthantoken"  # must match what you enter in Meta Dashboard
+        # ✅ Verification challenge
+        verify_token = "hanumanjitoken"
+        mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        if token == verify_token:
-            return challenge, 200
-        return "Verification failed", 403
 
-    elif request.method == "POST":
+        if mode == "subscribe" and token == verify_token:
+            return challenge, 200
+        else:
+            return "Verification failed", 403
+
+    if request.method == "POST":
+        # ✅ Incoming messages (we'll expand later)
         data = request.get_json()
-        print("📩 Incoming:", data)
-        # here you’ll parse the WhatsApp messages
-        return "OK", 200
+        print("📩 Webhook received:", data)
+        return "EVENT_RECEIVED", 200
+
 
 
 # ------------------- Scheduler for Daily Push -------------------
