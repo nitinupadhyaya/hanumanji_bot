@@ -1,18 +1,19 @@
 import os
 import sqlite3
+import requests
 from flask import Flask, request
-from twilio.rest import Client
 from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 from verses import verses
 
 # ------------------- Config -------------------
-ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. whatsapp:+9195409xxxx
-account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-twilio_whatsapp = os.environ.get("TWILIO_WHATSAPP")  # "whatsapp:+14155238886"
+VERIFY_TOKEN = "manthantoken"  # must match what you set in Meta dashboard
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")  # from Meta → System User token
+WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Business
+ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
 
-client = Client(account_sid, auth_token)
+GRAPH_API_URL = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/messages"
+
 app = Flask(__name__)
 DB_FILE = "progress.db"
 
@@ -40,6 +41,21 @@ def save_progress(phone, day):
     conn.commit()
     conn.close()
 
+# ------------------- Message Sending -------------------
+def send_whatsapp_message(phone, message):
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone,
+        "type": "text",
+        "text": {"body": message}
+    }
+    resp = requests.post(GRAPH_API_URL, headers=headers, json=payload)
+    print("📤 Sent:", resp.status_code, resp.text)
+
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
     current_day = get_progress(phone)
@@ -65,20 +81,15 @@ def handle_admin_message(incoming_msg):
     if incoming_msg.lower().startswith("broadcast "):
         broadcast_msg = incoming_msg[len("broadcast "):].strip()
 
-        # Fetch all users
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT phone FROM users")
         users = [row[0] for row in c.fetchall()]
         conn.close()
 
-        # Send broadcast
         for u in users:
-            client.messages.create(
-                body=f"[Broadcast] {broadcast_msg}",
-                from_=twilio_whatsapp,
-                to=u
-            )
+            send_whatsapp_message(u, f"[Broadcast] {broadcast_msg}")
+
         return "✅ Broadcast sent!"
 
     return "❌ Admin command not recognized."
@@ -88,23 +99,40 @@ def handle_admin_message(incoming_msg):
 def webhook():
     if request.method == "GET":
         # ✅ Verification challenge
-        verify_token = "hanumanjitoken"
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
 
-        if mode == "subscribe" and token == verify_token:
+        if mode == "subscribe" and token == VERIFY_TOKEN:
             return challenge, 200
         else:
             return "Verification failed", 403
 
     if request.method == "POST":
-        # ✅ Incoming messages (we'll expand later)
         data = request.get_json()
         print("📩 Webhook received:", data)
+
+        if "entry" in data:
+            for entry in data["entry"]:
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+                    messages = value.get("messages", [])
+                    if messages:
+                        phone = messages[0]["from"]  # user’s phone number
+                        msg_text = messages[0]["text"]["body"]
+
+                        if phone == ADMIN_NUMBER:
+                            reply = handle_admin_message(msg_text)
+                        else:
+                            # Normal user → next verse
+                            if msg_text.lower().strip() == "start":
+                                reply = get_next_message(phone)
+                            else:
+                                reply = "🙏 Send 'start' to begin learning Hanuman Chalisa verses."
+
+                        send_whatsapp_message(phone, reply)
+
         return "EVENT_RECEIVED", 200
-
-
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
@@ -129,11 +157,7 @@ def send_daily_verse():
         else:
             msg = "🎉 You’ve completed all 7 days of learning! Jai Hanuman 🙏"
 
-        client.messages.create(
-            body=msg,
-            from_=twilio_whatsapp,
-            to=phone
-        )
+        send_whatsapp_message(phone, msg)
 
 # ------------------- Main -------------------
 if __name__ == "__main__":
@@ -144,6 +168,4 @@ if __name__ == "__main__":
     scheduler.add_job(send_daily_verse, "cron", hour=7, minute=0)
     scheduler.start()
 
-    # Run Flask app (Railway exposes automatically)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
