@@ -86,49 +86,36 @@ def get_next_message(phone):
         return "🎉 You’ve completed all 7 days of learning! Jai Hanuman 🙏"
 
 # ------------------- Flask Routes -------------------
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    if request.method == "GET":
-        # Verification
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == VERIFY_TOKEN:
-            return challenge, 200
+    data = request.get_json()
+    print("📩 Webhook received:", data)
+
+    try:
+        entry = data["entry"][0]
+        changes = entry["changes"][0]["value"]
+        phone_number_id = changes["metadata"]["phone_number_id"]
+        from_number = changes["messages"][0]["from"]
+        message_text = changes["messages"][0]["text"]["body"].strip()
+
+        # ✅ If Admin is sending message
+        if from_number == ADMIN_NUMBER:
+            response = handle_admin_message(message_text)
+            send_whatsapp_message(phone_number_id, from_number, response)
+            return "EVENT_RECEIVED", 200
+
+        # ✅ Normal user logic
+        if message_text.lower() in ["start", "next"]:
+            msg = get_next_message(from_number)
         else:
-            return "Verification failed", 403
+            msg = "🙏 Send *start* to begin or *next* for the next verse."
 
-    if request.method == "POST":
-        data = request.get_json()
-        print("📩 Webhook received:", data)
+        send_whatsapp_message(phone_number_id, from_number, msg)
 
-        try:
-            entry = data["entry"][0]
-            changes = entry["changes"][0]["value"]
-            phone_number_id = changes["metadata"]["phone_number_id"]
-            from_number = changes["messages"][0]["from"]
-            message_text = changes["messages"][0]["text"]["body"].strip()
+    except Exception as e:
+        print("⚠️ Error processing webhook:", e)
 
-            # Save new user if not already
-            if get_progress(from_number) == 0:
-                save_progress(from_number, 0)
-
-            # ✅ Admin command
-            if from_number == ADMIN_NUMBER and message_text.lower().startswith("broadcast "):
-                broadcast_msg = message_text[len("broadcast "):].strip()
-                for u in get_all_users():
-                    send_whatsapp_message(phone_number_id, u, f"[Broadcast] {broadcast_msg}")
-                send_whatsapp_message(phone_number_id, from_number, "✅ Broadcast sent!")
-                return "EVENT_RECEIVED", 200
-
-            # ✅ Normal user flow (next verse)
-            reply = get_next_message(from_number)
-            send_whatsapp_message(phone_number_id, from_number, reply)
-
-        except Exception as e:
-            print("⚠️ Error processing webhook:", e)
-
-        return "EVENT_RECEIVED", 200
+    return "EVENT_RECEIVED", 200
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
