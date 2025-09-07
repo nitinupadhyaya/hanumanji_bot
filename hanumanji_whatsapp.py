@@ -111,12 +111,26 @@ def webhook():
     try:
         entry = data["entry"][0]
         changes = entry["changes"][0]["value"]
-        phone_number_id = changes["metadata"]["phone_number_id"]
-        from_number = changes["messages"][0]["from"]
-        message_text = changes["messages"][0]["text"]["body"]
 
-        # Echo back
-        send_whatsapp_message(phone_number_id, from_number, f"You said: {message_text}")
+        # Meta provides the phone_number_id (the business number receiving the msg)
+        phone_number_id = changes["metadata"]["phone_number_id"]
+
+        if "messages" in changes:
+            from_number = changes["messages"][0]["from"]      # sender's wa_id
+            message_text = changes["messages"][0]["text"]["body"].strip().lower()
+
+            print(f"📲 Message from {from_number}: {message_text}")
+
+            # -------------------
+            # Learning Flow
+            # -------------------
+            if message_text in ["start", "jai hanuman", "hello"]:
+                reply = get_next_message(from_number)
+            else:
+                reply = "🙏 Send *start* to begin your Hanuman Chalisa learning journey."
+
+            # Send reply back to user
+            send_whatsapp_message(phone_number_id, from_number, reply)
 
     except Exception as e:
         print("⚠️ Error processing webhook:", e)
