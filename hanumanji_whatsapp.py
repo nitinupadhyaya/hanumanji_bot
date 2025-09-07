@@ -13,7 +13,7 @@ WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Bu
 ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
 
 META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
-PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_ID")
 
 
 GRAPH_API_URL = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/messages"
