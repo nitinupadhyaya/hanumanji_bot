@@ -124,16 +124,21 @@ def webhook():
             return "EVENT_RECEIVED", 200
 
         phone_number_id = changes["metadata"]["phone_number_id"]
-        from_number = changes["messages"][0]["from"]
+        from_number = changes["messages"][0]["from"]  # e.g. "9195409xxxx"
         message_text = changes["messages"][0]["text"]["body"].strip()
 
-        # Admin commands
-        if from_number == ADMIN_NUMBER:
+        # ✅ Normalize numbers
+        clean_from = from_number.lstrip("+")
+        clean_admin = ADMIN_NUMBER.lstrip("+")
+
+        # ✅ Admin commands
+        if clean_from == clean_admin and message_text.lower().startswith("broadcast"):
             reply = handle_admin_message(message_text, phone_number_id)
             send_whatsapp_message(phone_number_id, from_number, reply)
+            print(f"📢 Admin broadcast triggered: {message_text}")
             return "EVENT_RECEIVED", 200
 
-        # User commands
+        # ✅ User commands
         if message_text.lower() == "start":
             verse = get_next_message(from_number)
             send_whatsapp_message(phone_number_id, from_number, verse)
