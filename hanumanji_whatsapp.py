@@ -67,6 +67,29 @@ def send_whatsapp_message(phone_number_id, to_number, message_text):
     response = requests.post(url, headers=headers, json=payload)
     print("📤 Sent:", response.status_code, response.text)
 
+
+def handle_admin_message(incoming_msg, phone_number_id):
+    incoming_msg = incoming_msg.strip()
+
+    if incoming_msg.lower().startswith("broadcast "):
+        broadcast_msg = incoming_msg[len("broadcast "):].strip()
+
+        # Fetch all users
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT phone FROM users")
+        users = [row[0] for row in c.fetchall()]
+        conn.close()
+
+        # Send broadcast
+        for u in users:
+            send_whatsapp_message(phone_number_id, u, f"[Broadcast] {broadcast_msg}")
+
+        return "✅ Broadcast sent!"
+
+    return "❌ Admin command not recognized."
+
+
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
     current_day = get_progress(phone)
