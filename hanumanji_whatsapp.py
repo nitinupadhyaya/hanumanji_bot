@@ -118,29 +118,34 @@ def webhook():
         entry = data["entry"][0]
         changes = entry["changes"][0]["value"]
         phone_number_id = changes["metadata"]["phone_number_id"]
-        from_number = changes["messages"][0]["from"]   # e.g., "919540964715"
-        message_text = changes["messages"][0]["text"]["body"].strip()
 
-        # Normalize admin number (remove whatsapp:+ if present)
-        if from_number == ADMIN_NUMBER.replace("whatsapp:", ""):
-            print("👑 Admin detected")
-            response = handle_admin_message(message_text, phone_number_id)
-            send_whatsapp_message(phone_number_id, from_number, response)
-            return "EVENT_RECEIVED", 200
+        # ✅ Check if this event contains a message
+        if "messages" in changes:
+            from_number = changes["messages"][0]["from"]   # e.g., "919540964715"
+            message_text = changes["messages"][0]["text"]["body"].strip()
 
-        # ✅ Normal user logic
-        if message_text.lower() in ["start", "next"]:
-            msg = get_next_message(from_number)
+            # Admin check (normalize)
+            if from_number == ADMIN_NUMBER.replace("whatsapp:", ""):
+                print("👑 Admin detected")
+                response = handle_admin_message(message_text, phone_number_id)
+                send_whatsapp_message(phone_number_id, from_number, response)
+                return "EVENT_RECEIVED", 200
+
+            # ✅ Normal user logic
+            if message_text.lower() in ["start", "next"]:
+                msg = get_next_message(from_number)
+            else:
+                msg = "🙏 Send *start* to begin or *next* for the next verse."
+
+            send_whatsapp_message(phone_number_id, from_number, msg)
+
         else:
-            msg = "🙏 Send *start* to begin or *next* for the next verse."
-
-        send_whatsapp_message(phone_number_id, from_number, msg)
+            print("ℹ️ Webhook event has no messages field (maybe status update). Ignoring.")
 
     except Exception as e:
         print("⚠️ Error processing webhook:", e)
 
     return "EVENT_RECEIVED", 200
-
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
