@@ -8,20 +8,17 @@ from verses import verses
 
 
 # ------------------- Config -------------------
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # must match what you set in Meta dashboard
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # must match Meta dashboard
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")  # from Meta → System User token
 WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID")  # from Meta WhatsApp Business
 ADMIN_NUMBER = os.environ.get("ADMIN_NUMBER")  # e.g. "9195409xxxx"
 
-META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
-ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN") 
-PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_ID")
-
-
+ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
 GRAPH_API_URL = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/messages"
 
 app = Flask(__name__)
 DB_FILE = "progress.db"
+
 
 # ------------------- DB Helpers -------------------
 def init_db():
@@ -55,6 +52,7 @@ def get_all_users():
     conn.close()
     return users
 
+
 # ------------------- Messaging Helpers -------------------
 def send_whatsapp_message(phone_number_id, to_number, message_text):
     url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
@@ -68,24 +66,21 @@ def send_whatsapp_message(phone_number_id, to_number, message_text):
     print("📤 Sent:", response.status_code, response.text)
 
 
+# ------------------- Admin Helpers -------------------
 def handle_admin_message(incoming_msg, phone_number_id):
     incoming_msg = incoming_msg.strip()
 
     if incoming_msg.lower().startswith("broadcast "):
         broadcast_msg = incoming_msg[len("broadcast "):].strip()
+        users = get_all_users()
 
-        # Fetch all users
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT phone FROM users")
-        users = [row[0] for row in c.fetchall()]
-        conn.close()
+        if not users:
+            return "⚠️ No users found in DB to broadcast."
 
-        # Send broadcast
         for u in users:
             send_whatsapp_message(phone_number_id, u, f"[Broadcast] {broadcast_msg}")
 
-        return "✅ Broadcast sent!"
+        return f"✅ Broadcast sent to {len(users)} users."
 
     return "❌ Admin command not recognized."
 
@@ -108,6 +103,7 @@ def get_next_message(phone):
     else:
         return "🎉 You’ve completed all 7 days of learning! Jai Hanuman 🙏"
 
+
 # ------------------- Flask Routes -------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -118,31 +114,36 @@ def webhook():
         entry = data["entry"][0]
         changes = entry["changes"][0]["value"]
 
-        # Not all webhooks have "messages"
+        # Some webhooks are status updates (delivery/read receipts)
         if "messages" not in changes:
             print("ℹ️ Webhook event has no messages field (maybe status update). Ignoring.")
             return "EVENT_RECEIVED", 200
 
         phone_number_id = changes["metadata"]["phone_number_id"]
-        from_number = changes["messages"][0]["from"]  # e.g. "9195409xxxx"
+        from_number = changes["messages"][0]["from"]
         message_text = changes["messages"][0]["text"]["body"].strip()
 
-        # ✅ Normalize numbers
+        # Normalize phone formats
         clean_from = from_number.lstrip("+")
         clean_admin = ADMIN_NUMBER.lstrip("+")
 
+        # ✅ Ensure user is registered in DB
+        if get_progress(from_number) == 0:
+            save_progress(from_number, 0)
+            print(f"🆕 Registered new user: {from_number}")
+
         # ✅ Admin commands
-        if clean_from == clean_admin and message_text.lower().startswith("broadcast"):
+        if clean_from == clean_admin:
             reply = handle_admin_message(message_text, phone_number_id)
             send_whatsapp_message(phone_number_id, from_number, reply)
-            print(f"📢 Admin broadcast triggered: {message_text}")
+            print(f"📢 Admin command processed: {message_text}")
             return "EVENT_RECEIVED", 200
 
-        # ✅ User commands
+        # ✅ User flow
         if message_text.lower() == "start":
             verse = get_next_message(from_number)
             send_whatsapp_message(phone_number_id, from_number, verse)
-            print(f"📤 Sent verse to {from_number}")
+            print(f"📤 Sent Day {get_progress(from_number)} verse to {from_number}")
         else:
             send_whatsapp_message(phone_number_id, from_number, f"You said: {message_text}")
             print(f"📤 Echoed back to {from_number}")
@@ -151,7 +152,6 @@ def webhook():
         print("⚠️ Error processing webhook:", e)
 
     return "EVENT_RECEIVED", 200
-
 
 
 # ------------------- Scheduler for Daily Push -------------------
@@ -187,3 +187,5 @@ if __name__ == "__main__":
 
     # Run Flask app (Railway exposes automatically)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+
