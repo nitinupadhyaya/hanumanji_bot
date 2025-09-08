@@ -82,12 +82,20 @@ def handle_admin_message(incoming_msg, phone_number_id):
         broadcast_msg = incoming_msg[len("broadcast "):].strip()
 
         users = get_all_users()
+        print(f"📢 Broadcasting to {len(users)} users...")
+
         for u in users:
-            send_whatsapp_message(phone_number_id, u, f"[Broadcast] {broadcast_msg}")
+            try:
+                # ✅ Force use of WHATSAPP_PHONE_ID env, not webhook metadata
+                send_whatsapp_message(WHATSAPP_PHONE_ID, u, f"[Broadcast] {broadcast_msg}")
+                print(f"✅ Broadcast sent to {u}")
+            except Exception as e:
+                print(f"❌ Failed to send broadcast to {u}: {e}")
 
         return "✅ Broadcast sent!"
     else:
         return "❌ Admin command not recognized."
+
 
 # ------------------- Learning Logic -------------------
 def get_next_message(phone):
@@ -130,11 +138,13 @@ def webhook():
         clean_admin = ADMIN_NUMBER.lstrip("+")
 
         # ✅ If admin → handle only admin commands
+        # ✅ If admin → handle only admin commands
         if clean_from == clean_admin:
-            reply = handle_admin_message(message_text, phone_number_id)
-            send_whatsapp_message(phone_number_id, from_number, reply)
+            reply = handle_admin_message(message_text, WHATSAPP_PHONE_ID)
+            send_whatsapp_message(WHATSAPP_PHONE_ID, from_number, reply)
             print(f"📢 Admin command processed: {message_text}")
             return "EVENT_RECEIVED", 200
+
 
         # ✅ Normal user flow
         add_user_if_new(from_number)
