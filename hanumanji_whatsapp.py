@@ -117,35 +117,45 @@ def webhook():
     try:
         entry = data["entry"][0]
         changes = entry["changes"][0]["value"]
+
+        # Not all webhooks have "messages" (status updates, etc.)
+        if "messages" not in changes:
+            print("ℹ️ Webhook event has no messages field (maybe status update). Ignoring.")
+            return "EVENT_RECEIVED", 200
+
         phone_number_id = changes["metadata"]["phone_number_id"]
+        from_number = changes["messages"][0]["from"]
+        message_text = changes["messages"][0]["text"]["body"].strip().lower()
 
-        # ✅ Check if this event contains a message
-        if "messages" in changes:
-            from_number = changes["messages"][0]["from"]   # e.g., "919540964715"
-            message_text = changes["messages"][0]["text"]["body"].strip()
+        # Check if message is from Admin
+        if from_number == ADMIN_NUMBER and message_text.startswith("broadcast"):
+            verse = get_daily_verse()
+            print(f"📢 Broadcast triggered by admin. Sending verse: {verse}")
 
-            # Admin check (normalize)
-            if from_number == ADMIN_NUMBER.replace("whatsapp:", ""):
-                print("👑 Admin detected")
-                response = handle_admin_message(message_text, phone_number_id)
-                send_whatsapp_message(phone_number_id, from_number, response)
-                return "EVENT_RECEIVED", 200
+            for user in SUBSCRIBERS:
+                try:
+                    send_whatsapp_message(phone_number_id, user, verse)
+                    print(f"✅ Broadcast sent to {user}")
+                except Exception as e:
+                    print(f"❌ Failed to send to {user}: {e}")
 
-            # ✅ Normal user logic
-            if message_text.lower() in ["start", "next"]:
-                msg = get_next_message(from_number)
-            else:
-                msg = "🙏 Send *start* to begin or *next* for the next verse."
+            return "EVENT_RECEIVED", 200
 
-            send_whatsapp_message(phone_number_id, from_number, msg)
+        # Normal user flow → send daily verse
+        if message_text == "start":
+            verse = get_daily_verse()
+            send_whatsapp_message(phone_number_id, from_number, verse)
+            print(f"📤 Sent daily verse to {from_number}")
 
         else:
-            print("ℹ️ Webhook event has no messages field (maybe status update). Ignoring.")
+            send_whatsapp_message(phone_number_id, from_number, f"You said: {message_text}")
+            print(f"📤 Echoed back to {from_number}")
 
     except Exception as e:
         print("⚠️ Error processing webhook:", e)
 
     return "EVENT_RECEIVED", 200
+
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
