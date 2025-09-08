@@ -118,12 +118,13 @@ def webhook():
         entry = data["entry"][0]
         changes = entry["changes"][0]["value"]
         phone_number_id = changes["metadata"]["phone_number_id"]
-        from_number = changes["messages"][0]["from"]
+        from_number = changes["messages"][0]["from"]   # e.g., "919540964715"
         message_text = changes["messages"][0]["text"]["body"].strip()
 
-        # ✅ If Admin is sending message
-        if from_number == ADMIN_NUMBER:
-            response = handle_admin_message(message_text)
+        # Normalize admin number (remove whatsapp:+ if present)
+        if from_number == ADMIN_NUMBER.replace("whatsapp:", ""):
+            print("👑 Admin detected")
+            response = handle_admin_message(message_text, phone_number_id)
             send_whatsapp_message(phone_number_id, from_number, response)
             return "EVENT_RECEIVED", 200
 
@@ -139,6 +140,7 @@ def webhook():
         print("⚠️ Error processing webhook:", e)
 
     return "EVENT_RECEIVED", 200
+
 
 # ------------------- Scheduler for Daily Push -------------------
 def send_daily_verse():
