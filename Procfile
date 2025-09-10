@@ -1,1 +1,1 @@
-web: python hanumanji_whatsapp.py
+worker: python hanumanji_telegram.py
