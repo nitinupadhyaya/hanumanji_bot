@@ -1,8 +1,5 @@
-Flask
-twilio
 apscheduler
 pytz
-
 python-telegram-bot==20.7
 
 
